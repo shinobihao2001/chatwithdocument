@@ -8,7 +8,7 @@ import streamlit as st
 from bs4 import BeautifulSoup
 
 # ============================
-# CONFIG
+# CẤU HÌNH
 # ============================
 
 OLLAMA_URL = "http://14.241.244.57:11434/api/chat"
@@ -18,12 +18,64 @@ os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-HEADER_HEIGHT = 90
 MAIN_PANEL_HEIGHT = 680
 
 
 # ============================
-# LLM
+# CSS UI TÙY CHỈNH
+# ============================
+
+st.markdown("""
+<style>
+
+/* Thu nhỏ uploader */
+section[data-testid="stFileUploader"] {
+    padding: 0.2rem !important;
+}
+
+section[data-testid="stFileUploader"] > div {
+    padding: 0.2rem !important;
+}
+
+/* Thu nhỏ button */
+div[data-testid="stButton"] button {
+    padding: 0.25rem 0.6rem !important;
+    font-size: 0.8rem !important;
+}
+
+/* -------------------- */
+/* OCR RESULT: BỎ VIỀN */
+/* -------------------- */
+
+.ocr-panel div[data-testid="stVerticalBlock"] {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+/* -------------------- */
+/* CHAT PANEL: GIỮ KHUNG */
+/* -------------------- */
+
+.chat-panel {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 12px;
+    background: white;
+}
+
+/* vùng scroll cho chat */
+.chat-scroll {
+    height: 520px;
+    overflow-y: auto;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# ============================
+# GỌI OLLAMA
 # ============================
 
 def chat_with_ollama(context: str, question: str) -> str:
@@ -38,9 +90,12 @@ def chat_with_ollama(context: str, question: str) -> str:
                     f"{context}"
                 )
             },
-            {"role": "user", "content": question},
+            {
+                "role": "user",
+                "content": question
+            }
         ],
-        "stream": False,
+        "stream": False
     }
 
     r = requests.post(OLLAMA_URL, json=payload, timeout=300)
@@ -49,22 +104,32 @@ def chat_with_ollama(context: str, question: str) -> str:
 
 
 # ============================
-# OCR
+# CHẠY CHANDRA
 # ============================
 
 def run_chandra_cli(input_file: Path, output_dir: Path):
-    cmd = ["chandra", str(input_file), str(output_dir), "--method", "hf"]
+    cmd = [
+        "chandra",
+        str(input_file),
+        str(output_dir),
+        "--method",
+        "hf"
+    ]
 
     result = subprocess.run(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        text=True
     )
 
     if result.returncode != 0:
         raise RuntimeError(result.stderr)
 
+
+# ============================
+# ĐỌC OCR
+# ============================
 
 def read_ocr_text_and_tables(output_dir: Path):
     text_blocks = []
@@ -102,7 +167,10 @@ def read_ocr_images(output_dir: Path):
     for file in sorted(output_dir.glob("**/*")):
         if file.suffix.lower() in {".webp", ".png", ".jpg", ".jpeg"}:
             images.append(
-                {"name": file.name, "bytes": file.read_bytes()}
+                {
+                    "name": file.name,
+                    "bytes": file.read_bytes()
+                }
             )
     return images
 
@@ -111,13 +179,17 @@ def read_ocr_images(output_dir: Path):
 # UI
 # ============================
 
-st.set_page_config(page_title="OCR + Chat LLM", layout="wide")
+st.set_page_config(
+    page_title="OCR + Chat LLM",
+    layout="wide"
+)
 
 st.markdown("### 📄 OCR tài liệu → 💬 Hỏi LLM")
 st.markdown(
     "<small>Chandra CLI • PDF / Image • Text-only LLM</small>",
     unsafe_allow_html=True,
 )
+
 
 # ============================
 # SESSION
@@ -134,19 +206,18 @@ for k, v in {
 
 
 # ============================
-# MAIN GRID
+# KHUNG CHÍNH
 # ============================
 
-left_col, right_col = st.columns([1.1, 1.4])
+with st.container():
 
-# ============================================================
-# LEFT COLUMN
-# ============================================================
+    left_col, right_col = st.columns([1.1, 1.4])
 
-with left_col:
+    # ========================
+    # CỘT TRÁI
+    # ========================
 
-    # ----- HEADER FIX HEIGHT -----
-    with st.container(height=HEADER_HEIGHT):
+    with left_col:
 
         st.markdown("#### 📤 Tài liệu")
 
@@ -156,130 +227,138 @@ with left_col:
             uploaded_file = st.file_uploader(
                 "Upload",
                 type=["pdf", "jpg", "jpeg", "png", "webp"],
-                label_visibility="collapsed",
+                label_visibility="collapsed"
             )
 
         with btn_col:
             run_btn = st.button("🚀 OCR", use_container_width=True)
 
-    # ----- MAIN PANEL FIX HEIGHT -----
-    with st.container(height=MAIN_PANEL_HEIGHT):
-
-        if uploaded_file:
-            suffix = Path(uploaded_file.name).suffix.lower()
-
-            if suffix == ".pdf":
-                st.pdf(uploaded_file)
-            else:
-                st.image(uploaded_file, use_container_width=True)
-
-        if run_btn and uploaded_file:
-
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp = Path(tmp)
-
-                input_file = tmp / f"input{suffix}"
-                output_dir = tmp / "ocr_output"
-
-                input_file.write_bytes(uploaded_file.read())
-                output_dir.mkdir(exist_ok=True)
-
-                with st.spinner("OCR đang chạy..."):
-                    try:
-                        run_chandra_cli(input_file, output_dir)
-
-                        text, tables = read_ocr_text_and_tables(output_dir)
-
-                        st.session_state.ocr_text = text
-                        st.session_state.ocr_tables_html = tables
-                        st.session_state.ocr_images = read_ocr_images(
-                            output_dir
-                        )
-
-                        st.success("Hoàn tất")
-
-                    except Exception as e:
-                        st.error("OCR lỗi")
-                        st.exception(e)
-
-
-# ============================================================
-# RIGHT COLUMN
-# ============================================================
-
-with right_col:
-
-    # ----- HEADER FIX HEIGHT (để cân layout) -----
-    with st.container(height=HEADER_HEIGHT):
-
-        st.markdown("#### 📑 Kết quả / Chat")
-
-    # ----- MAIN PANEL FIX HEIGHT -----
-    tab_ocr, tab_chat = st.tabs(["📄 OCR", "💬 Chat LLM"])
-
-    with tab_ocr:
         with st.container(height=MAIN_PANEL_HEIGHT):
 
-            if st.session_state.ocr_text:
-                st.markdown("#### Văn bản")
-                st.markdown(st.session_state.ocr_text)
+            if uploaded_file:
+                suffix = Path(uploaded_file.name).suffix.lower()
 
-            if st.session_state.ocr_tables_html:
-                st.markdown("#### Bảng")
+                if suffix == ".pdf":
+                    st.pdf(uploaded_file)
+                else:
+                    st.image(uploaded_file, use_container_width=True)
 
-                for i, html in enumerate(
-                    st.session_state.ocr_tables_html, 1
-                ):
-                    st.markdown(f"**Bảng {i}**")
-                    st.markdown(html, unsafe_allow_html=True)
+            if run_btn and uploaded_file:
 
-            if st.session_state.ocr_images:
-                st.markdown("#### Dấu / chữ ký")
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmp = Path(tmp)
 
-                cols = st.columns(3)
-                for i, img in enumerate(st.session_state.ocr_images):
-                    with cols[i % 3]:
-                        st.image(
-                            img["bytes"],
-                            caption=img["name"],
-                            use_container_width=True,
-                        )
+                    input_file = tmp / f"input{suffix}"
+                    output_dir = tmp / "ocr_output"
 
-    with tab_chat:
+                    input_file.write_bytes(uploaded_file.read())
+                    output_dir.mkdir(exist_ok=True)
 
-        with st.container(height=MAIN_PANEL_HEIGHT):
+                    with st.spinner("OCR đang chạy..."):
+                        try:
+                            run_chandra_cli(input_file, output_dir)
 
-            st.markdown("#### Trả lời")
+                            text, tables = read_ocr_text_and_tables(output_dir)
+
+                            st.session_state.ocr_text = text
+                            st.session_state.ocr_tables_html = tables
+                            st.session_state.ocr_images = read_ocr_images(output_dir)
+
+                            st.success("Hoàn tất")
+
+                        except Exception as e:
+                            st.error("OCR lỗi")
+                            st.exception(e)
+
+    # ========================
+    # CỘT PHẢI
+    # ========================
+
+    with right_col:
+
+        tab_ocr, tab_chat = st.tabs(
+            ["📄 Kết quả OCR", "💬 Chat LLM"]
+        )
+
+        # ----- OCR TAB (BỎ VIỀN) -----
+        with tab_ocr:
+
+            st.markdown('<div class="ocr-panel">', unsafe_allow_html=True)
+
+            with st.container(height=MAIN_PANEL_HEIGHT):
+
+                if st.session_state.ocr_text:
+                    st.markdown("#### Văn bản")
+                    st.markdown(st.session_state.ocr_text)
+
+                if st.session_state.ocr_tables_html:
+                    st.markdown("#### Bảng")
+
+                    for i, html in enumerate(
+                        st.session_state.ocr_tables_html, 1
+                    ):
+                        st.markdown(f"**Bảng {i}**")
+                        st.markdown(html, unsafe_allow_html=True)
+
+                if st.session_state.ocr_images:
+                    st.markdown("#### Dấu / chữ ký")
+
+                    cols = st.columns(3)
+                    for i, img in enumerate(
+                        st.session_state.ocr_images
+                    ):
+                        with cols[i % 3]:
+                            st.image(
+                                img["bytes"],
+                                caption=img["name"],
+                                use_container_width=True
+                            )
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # ----- CHAT TAB (GIỮ KHUNG + FIX HEIGHT) -----
+        with tab_chat:
+
+            st.markdown('<div class="chat-panel">', unsafe_allow_html=True)
+
+            st.markdown('<div class="chat-scroll">', unsafe_allow_html=True)
 
             if st.session_state.chat_answer:
                 st.markdown(st.session_state.chat_answer)
 
-        question = st.text_area(
-            "Câu hỏi",
-            height=90,
-            placeholder="Ví dụ: Văn bản ban hành ngày nào?",
-            label_visibility="collapsed",
-        )
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        if st.button("📨 Hỏi LLM", use_container_width=True) and question:
+            question = st.text_area(
+                "Câu hỏi",
+                height=90,
+                placeholder="Ví dụ: Văn bản ban hành ngày nào?",
+                label_visibility="collapsed"
+            )
 
-            with st.spinner("LLM đang xử lý..."):
+            if st.button("📨 Hỏi LLM", use_container_width=True) and question:
 
-                table_text = "\n\n".join(
-                    table_html_to_text(t)
-                    for t in st.session_state.ocr_tables_html
-                )
+                with st.spinner("LLM đang xử lý..."):
 
-                llm_context = (
-                    st.session_state.ocr_text
-                    + "\n\n"
-                    + table_text
-                )
+                    table_text = "\n\n".join(
+                        table_html_to_text(t)
+                        for t in st.session_state.ocr_tables_html
+                    )
 
-                try:
-                    answer = chat_with_ollama(llm_context, question)
-                    st.session_state.chat_answer = answer
+                    llm_context = (
+                        st.session_state.ocr_text
+                        + "\n\n"
+                        + table_text
+                    )
 
-                except Exception as e:
-                    st.error("LLM lỗi")
-                    st.exception(e)
+                    try:
+                        answer = chat_with_ollama(
+                            llm_context,
+                            question
+                        )
+                        st.session_state.chat_answer = answer
+
+                    except Exception as e:
+                        st.error("LLM lỗi")
+                        st.exception(e)
+
+            st.markdown('</div>', unsafe_allow_html=True)
