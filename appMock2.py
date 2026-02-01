@@ -139,6 +139,43 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---- CSS thu nhỏ UI + scroll từng cột
+st.markdown(
+    """
+    <style>
+
+    /* thu nhỏ uploader */
+    div[data-testid="stFileUploader"] section {
+        padding: 0.35rem !important;
+    }
+
+    div[data-testid="stFileUploader"] label {
+        font-size: 0.8rem !important;
+    }
+
+    /* buttons */
+    button {
+        padding: 0.25rem 0.6rem !important;
+        font-size: 0.75rem !important;
+        height: 1.9rem !important;
+    }
+
+    textarea, input {
+        font-size: 0.8rem !important;
+    }
+
+    /* container scroll */
+    .scroll-col {
+        height: calc(100vh - 150px);
+        overflow-y: auto;
+        padding-right: 0.5rem;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # --- session state
 for k, v in {
     "ocr_text": "",
@@ -155,14 +192,17 @@ for k, v in {
 # CHIA 2 CỘT CHÍNH
 # ============================
 
-left_col, right_col = st.columns([1.1, 1.3])
+left_col, right_col = st.columns([1.05, 1.3])
 
 
 # ============================
-# CỘT TRÁI: UPLOAD + OCR + PREVIEW
+# CỘT TRÁI: SCROLL
 # ============================
 
 with left_col:
+
+    st.markdown('<div class="scroll-col">', unsafe_allow_html=True)
+
     st.subheader("📤 Upload tài liệu")
 
     uploaded_file = st.file_uploader(
@@ -175,7 +215,7 @@ with left_col:
         suffix = Path(uploaded_file.name).suffix.lower()
 
         # ---- nút OCR ở trên
-        if st.button("🚀 Chạy OCR (Chandra CLI)", use_container_width=True):
+        if st.button("🚀 OCR"):
 
             with tempfile.TemporaryDirectory() as tmp:
                 tmp = Path(tmp)
@@ -202,7 +242,7 @@ with left_col:
                         st.error("OCR thất bại")
                         st.exception(e)
 
-        # ---- preview bên dưới
+        # ---- preview
         st.divider()
         st.subheader("👁️ Xem tài liệu")
 
@@ -211,18 +251,22 @@ with left_col:
         else:
             st.image(uploaded_file, use_container_width=True)
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ============================
-# CỘT PHẢI: TAB OCR + CHAT
+# CỘT PHẢI: SCROLL + TAB
 # ============================
 
 with right_col:
 
+    st.markdown('<div class="scroll-col">', unsafe_allow_html=True)
+
     tab_ocr, tab_chat = st.tabs(["📄 Kết quả OCR", "💬 Chat với LLM"])
 
-    # ============================
+    # -------------------------
     # TAB OCR
-    # ============================
+    # -------------------------
     with tab_ocr:
 
         if st.session_state.ocr_text:
@@ -253,10 +297,9 @@ with right_col:
         if not st.session_state.ocr_text:
             st.info("Chưa có dữ liệu OCR.")
 
-
-    # ============================
+    # -------------------------
     # TAB CHAT
-    # ============================
+    # -------------------------
     with tab_chat:
 
         st.markdown("### 🤖 Trả lời")
@@ -270,11 +313,10 @@ with right_col:
 
         question = st.text_area(
             "Đặt câu hỏi về tài liệu",
-            height=120,
-            placeholder="Ví dụ: Văn bản này ban hành ngày nào?"
+            height=110,
         )
 
-        if st.button("📨 Gửi câu hỏi", use_container_width=True) and question:
+        if st.button("📨 Gửi") and question:
 
             with st.spinner("LLM đang suy nghĩ..."):
 
@@ -295,3 +337,5 @@ with right_col:
                 except Exception as e:
                     st.error("LLM lỗi")
                     st.exception(e)
+
+    st.markdown("</div>", unsafe_allow_html=True)
