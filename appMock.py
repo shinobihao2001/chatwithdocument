@@ -146,10 +146,10 @@ for k, v in {
 # CHIA 2 CỘT CHÍNH
 # ============================
 
-left_col, right_col = st.columns([1, 1.2])
+left_col, right_col = st.columns([1.1, 1.3])
 
 # ============================
-# CỘT TRÁI: UPLOAD + OCR
+# CỘT TRÁI: UPLOAD + PREVIEW
 # ============================
 
 with left_col:
@@ -163,11 +163,22 @@ with left_col:
     if uploaded_file:
         st.session_state.uploaded_preview = uploaded_file
 
+        st.divider()
+        st.subheader("👁️ Xem tài liệu")
+
+        suffix = Path(uploaded_file.name).suffix.lower()
+
+        if suffix == ".pdf":
+            st.pdf(uploaded_file)
+        else:
+            st.image(uploaded_file, use_container_width=True)
+
+        st.divider()
+
         if st.button("🚀 Chạy OCR (Chandra CLI)", use_container_width=True):
             with tempfile.TemporaryDirectory() as tmp:
                 tmp = Path(tmp)
 
-                suffix = Path(uploaded_file.name).suffix.lower()
                 input_file = tmp / f"input{suffix}"
                 output_dir = tmp / "ocr_output"
 
@@ -192,29 +203,18 @@ with left_col:
 
 
 # ============================
-# CỘT PHẢI: PREVIEW + TAB
+# CỘT PHẢI: TAB OCR + CHAT
 # ============================
 
 with right_col:
-    st.subheader("👁️ Xem tài liệu")
-
-    if st.session_state.uploaded_preview:
-        file = st.session_state.uploaded_preview
-        suffix = Path(file.name).suffix.lower()
-
-        if suffix == ".pdf":
-            st.pdf(file)
-        else:
-            st.image(file, use_container_width=True)
-
-    st.divider()
 
     tab_ocr, tab_chat = st.tabs(["📄 Kết quả OCR", "💬 Chat với LLM"])
 
     # ============================
-    # TAB 1: OCR
+    # TAB OCR
     # ============================
     with tab_ocr:
+
         if st.session_state.ocr_text:
             st.markdown("### 📄 OCR Text")
             st.markdown(st.session_state.ocr_text)
@@ -245,14 +245,14 @@ with right_col:
 
 
     # ============================
-    # TAB 2: CHAT
+    # TAB CHAT
     # ============================
     with tab_chat:
 
-        st.markdown("### 🤖 Trả lời")
-
         if "chat_answer" not in st.session_state:
             st.session_state.chat_answer = ""
+
+        st.markdown("### 🤖 Trả lời")
 
         if st.session_state.chat_answer:
             st.markdown(st.session_state.chat_answer)
@@ -270,6 +270,7 @@ with right_col:
         if st.button("📨 Gửi câu hỏi", use_container_width=True) and question:
 
             with st.spinner("LLM đang suy nghĩ..."):
+
                 table_text = "\n\n".join(
                     table_html_to_text(t)
                     for t in st.session_state.ocr_tables_html
