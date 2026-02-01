@@ -20,7 +20,116 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 
 # ============================
-# STREAMLIT STYLE COMPACT
+# GỌI OLLAMA (TEXT ONLY)
+# ============================
+
+def chat_with_ollama(context: str, question: str) -> str:
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an assistant that answers questions strictly "
+                    "based on the following document content:\n\n"
+                    f"{context}"
+                )
+            },
+            {
+                "role": "user",
+                "content": question
+            }
+        ],
+        "stream": False
+    }
+
+    r = requests.post(OLLAMA_URL, json=payload, timeout=300)
+    r.raise_for_status()
+    return r.json()["message"]["content"]
+
+
+# ============================
+# CHẠY CHANDRA CLI
+# ============================
+
+def run_chandra_cli(input_file: Path, output_dir: Path):
+    cmd = [
+        "chandra",
+        str(input_file),
+        str(output_dir),
+        "--method",
+        "hf"
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr)
+
+
+# ============================
+# ĐỌC OCR TEXT & HTML
+# ============================
+
+def read_ocr_text_and_tables(output_dir: Path):
+    text_blocks = []
+    html_tables = []
+
+    for file in sorted(output_dir.glob("**/*")):
+        if file.suffix.lower() in [".md", ".txt"]:
+            text_blocks.append(
+                file.read_text(encoding="utf-8", errors="ignore")
+            )
+
+        if file.suffix.lower() in [".html", ".htm"]:
+            html = file.read_text(encoding="utf-8", errors="ignore")
+            if "<table" in html.lower():
+                html_tables.append(html)
+
+    return "\n\n".join(text_blocks), html_tables
+
+
+# ============================
+# HTML TABLE → TEXT
+# ============================
+
+def table_html_to_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+
+    lines = []
+    for row in soup.find_all("tr"):
+        cells = row.find_all(["th", "td"])
+        values = [c.get_text(" ", strip=True) for c in cells]
+        if any(values):
+            lines.append(" | ".join(values))
+
+    return "\n".join(lines)
+
+
+# ============================
+# ĐỌC ẢNH OCR
+# ============================
+
+def read_ocr_images(output_dir: Path):
+    images = []
+    for file in sorted(output_dir.glob("**/*")):
+        if file.suffix.lower() in {".webp", ".png", ".jpg", ".jpeg"}:
+            images.append(
+                {
+                    "name": file.name,
+                    "bytes": file.read_bytes()
+                }
+            )
+    return images
+
+
+# ============================
+# STREAMLIT UI
 # ============================
 
 st.set_page_config(
@@ -28,67 +137,12 @@ st.set_page_config(
     layout="wide"
 )
 
+# Header nhỏ bằng markdown
+st.markdown("### 📄 OCR tài liệu → 💬 Hỏi LLM")
 st.markdown(
-    """
-<style>
-/* toàn trang */
-.block-container {
-    padding-top: 0.6rem;
-    padding-bottom: 0.5rem;
-    padding-left: 1.1rem;
-    padding-right: 1.1rem;
-}
-
-/* header */
-h2 {
-    margin-top: 0.1rem !important;
-    margin-bottom: 0.3rem !important;
-}
-
-/* caption */
-[data-testid="stCaptionContainer"] {
-    margin-top: -0.4rem;
-    margin-bottom: 0.4rem;
-}
-
-/* tabs */
-[data-testid="stTabs"] {
-    margin-top: 0.2rem;
-}
-
-/* uploader */
-[data-testid="stFileUploader"] {
-    padding-bottom: 0.2rem;
-}
-
-/* divider */
-hr {
-    margin: 0.4rem 0 !important;
-}
-
-/* buttons */
-button {
-    padding-top: 0.35rem !important;
-    padding-bottom: 0.35rem !important;
-}
-
-/* text area */
-textarea {
-    margin-top: 0.2rem !important;
-}
-</style>
-""",
+    "<small>Chandra CLI • PDF / Image • Text-only LLM</small>",
     unsafe_allow_html=True,
 )
-
-
-# ============================
-# HEADER GỌN
-# ============================
-
-st.markdown("## 📄 OCR tài liệu → 💬 Hỏi LLM")
-st.caption("Chandra CLI • PDF / Image • Text-only LLM")
-
 
 # ============================
 # SESSION STATE
@@ -118,7 +172,7 @@ left_col, right_col = st.columns([1.1, 1.4])
 
 with left_col:
 
-    st.markdown("### 📤 Tài liệu")
+    st.markdown("#### 📤 Tài liệu")
 
     upload_col, btn_col = st.columns([2.6, 1])
 
@@ -133,11 +187,7 @@ with left_col:
         run_btn = st.button("🚀 OCR", use_container_width=True)
 
     if uploaded_file:
-        st.session_state.uploaded_preview = uploaded_file
-
         suffix = Path(uploaded_file.name).suffix.lower()
-
-        st.divider()
 
         if suffix == ".pdf":
             st.pdf(uploaded_file)
@@ -157,20 +207,6 @@ with left_col:
 
             with st.spinner("OCR đang chạy..."):
                 try:
-                    run_chandra_cli = lambda i, o: subprocess.run(
-                        [
-                            "chandra",
-                            str(i),
-                            str(o),
-                            "--method",
-                            "hf",
-                        ],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        check=True,
-                    )
-
                     run_chandra_cli(input_file, output_dir)
 
                     text, tables = read_ocr_text_and_tables(output_dir)
@@ -204,7 +240,6 @@ with right_col:
             st.markdown(st.session_state.ocr_text)
 
         if st.session_state.ocr_tables_html:
-            st.divider()
             st.markdown("#### Bảng")
 
             for i, html in enumerate(
@@ -214,7 +249,6 @@ with right_col:
                 st.markdown(html, unsafe_allow_html=True)
 
         if st.session_state.ocr_images:
-            st.divider()
             st.markdown("#### Dấu / chữ ký")
 
             cols = st.columns(3)
@@ -235,8 +269,6 @@ with right_col:
 
         if st.session_state.chat_answer:
             st.markdown(st.session_state.chat_answer)
-
-        st.divider()
 
         question = st.text_area(
             "Câu hỏi",
@@ -270,51 +302,3 @@ with right_col:
                 except Exception as e:
                     st.error("LLM lỗi")
                     st.exception(e)
-
-
-# ============================
-# HÀM PHỤ
-# ============================
-
-def read_ocr_text_and_tables(output_dir: Path):
-    text_blocks = []
-    html_tables = []
-
-    for file in sorted(output_dir.glob("**/*")):
-        if file.suffix.lower() in [".md", ".txt"]:
-            text_blocks.append(
-                file.read_text(encoding="utf-8", errors="ignore")
-            )
-
-        if file.suffix.lower() in [".html", ".htm"]:
-            html = file.read_text(encoding="utf-8", errors="ignore")
-            if "<table" in html.lower():
-                html_tables.append(html)
-
-    return "\n\n".join(text_blocks), html_tables
-
-
-def table_html_to_text(html: str) -> str:
-    soup = BeautifulSoup(html, "html.parser")
-
-    lines = []
-    for row in soup.find_all("tr"):
-        cells = row.find_all(["th", "td"])
-        values = [c.get_text(" ", strip=True) for c in cells]
-        if any(values):
-            lines.append(" | ".join(values))
-
-    return "\n".join(lines)
-
-
-def read_ocr_images(output_dir: Path):
-    images = []
-    for file in sorted(output_dir.glob("**/*")):
-        if file.suffix.lower() in {".webp", ".png", ".jpg", ".jpeg"}:
-            images.append(
-                {
-                    "name": file.name,
-                    "bytes": file.read_bytes()
-                }
-            )
-    return images
